@@ -1,4 +1,12 @@
 {
   "watch": ["src"],
-  "ext": "js,json"
+  "ext": "js,json",
+  "ignore": [
+    "node_modules/**",
+    "uploads/**",
+    "temp/**",
+    "package-lock.json",
+    "test-*.js",
+    "*.log"
+  ]
 }
