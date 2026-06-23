@@ -3,7 +3,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAssets, getAssetById, getAssetDownloadUrl, streamMockAsset, uploadAsset } from '../controllers/assetController.js';
+import { getAssets, getCategories, getAssetById, getAssetDownloadUrl, streamMockAsset, uploadAsset, presignUpload, confirmUpload, getAssetThumbnail, uploadLinkAsset, updateAsset, deleteAsset } from '../controllers/assetController.js';
 import { protect, adminOnly } from '../middleware/authMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,10 +15,12 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+const maxUploadBytes = parseInt(process.env.MAX_UPLOAD_BYTES, 10) || 50 * 1024 * 1024;
+
 // Multer middleware setup
 const upload = multer({ 
   dest: TEMP_DIR,
-  limits: { fileSize: 15 * 1024 * 1024 } // 15MB file size limit
+  limits: { fileSize: maxUploadBytes }
 });
 
 const router = express.Router();
@@ -28,10 +30,17 @@ router.get('/mock-download/:id', streamMockAsset);
 
 // Protected metadata and URL generation routes
 router.get('/', protect, getAssets);
+router.get('/categories', protect, getCategories);
 router.get('/:id', protect, getAssetById);
 router.get('/:id/download', protect, getAssetDownloadUrl);
+router.get('/:id/thumbnail', getAssetThumbnail);
 
 // Admin only: Upload new asset route
 router.post('/upload', protect, adminOnly, upload.single('file'), uploadAsset);
+router.post('/presign', protect, adminOnly, presignUpload);
+router.post('/confirm-upload', protect, adminOnly, confirmUpload);
+router.post('/upload-link', protect, adminOnly, uploadLinkAsset);
+router.put('/:id', protect, adminOnly, updateAsset);
+router.delete('/:id', protect, adminOnly, deleteAsset);
 
 export default router;

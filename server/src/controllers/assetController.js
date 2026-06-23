@@ -1,17 +1,27 @@
 import Asset from '../models/Asset.js';
-import { getPresignedDownloadUrl, uploadFile, UPLOADS_DIR } from '../utils/s3.js';
+import { getPresignedDownloadUrl, uploadFile, UPLOADS_DIR, getPresignedUploadUrl, uploadBuffer, deleteFile } from '../utils/s3.js';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { triggerWorkflow } from '../utils/workflowEngine.js';
+import { classifyAsset } from '../utils/classificationPipeline.js';
+import { mimeToFileType } from '../utils/mimeToFileType.js';
+import { optimizeAsset } from '../utils/backgroundProcessor.js';
+import DownloadLog from '../models/DownloadLog.js';
 
 // @desc    Get all assets with optional filtering and search
 // @route   GET /api/assets
 // @access  Private
 export const getAssets = async (req, res) => {
-  const { type, search } = req.query;
+  const { type, search, category } = req.query;
   const filter = {};
 
-  if (type && ['pdf', 'image', 'text'].includes(type)) {
+  if (type && ['pdf', 'image', 'word', 'ppt', 'video'].includes(type)) {
     filter.fileType = type;
+  }
+
+  if (category) {
+    filter.categories = category;
   }
 
   if (search) {
@@ -30,6 +40,24 @@ export const getAssets = async (req, res) => {
     res.status(500).json({
       error: true,
       message: 'Server error retrieving assets',
+      code: 500
+    });
+  }
+};
+
+// @desc    Get all unique categories
+// @route   GET /api/assets/categories
+// @access  Private
+export const getCategories = async (req, res) => {
+  try {
+    const categories = await Asset.distinct('categories');
+    const sortedCategories = categories.filter(Boolean).sort();
+    res.status(200).json({ categories: sortedCategories });
+  } catch (error) {
+    console.error('Get Categories Error:', error.message);
+    res.status(500).json({
+      error: true,
+      message: 'Server error retrieving categories',
       code: 500
     });
   }
@@ -77,10 +105,26 @@ export const getAssetDownloadUrl = async (req, res) => {
     if (!filename.includes('.')) {
       if (asset.fileType === 'pdf') filename += '.pdf';
       else if (asset.fileType === 'image') filename += '.svg';
-      else if (asset.fileType === 'text') filename += '.txt';
+      else if (asset.fileType === 'word') filename += '.docx';
+      else if (asset.fileType === 'ppt') filename += '.pptx';
+      else if (asset.fileType === 'video') filename += '.mp4';
     }
 
-    const downloadUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, filename);
+    const isInline = req.query.inline === 'true';
+    const downloadUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, filename, isInline);
+
+    // Create secure audit log record for Phase 4.3
+    try {
+      await DownloadLog.create({
+        assetId: asset._id,
+        userId: req.user._id,
+        ip: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+        userAgent: req.headers['user-agent']
+      });
+    } catch (logErr) {
+      console.error('[Audit Log] Failed to write download log:', logErr.message);
+    }
+
     res.status(200).json({ downloadUrl });
   } catch (error) {
     console.error('Get Download URL Error:', error.message);
@@ -96,7 +140,7 @@ export const getAssetDownloadUrl = async (req, res) => {
 // @route   POST /api/assets/upload
 // @access  Private/Admin
 export const uploadAsset = async (req, res) => {
-  const { title, description } = req.body;
+  const { title, description, contentHash } = req.body;
 
   if (!title) {
     // If upload file exists, cleanup temp file first
@@ -117,31 +161,81 @@ export const uploadAsset = async (req, res) => {
   }
 
   try {
-    // Determine fileType
-    const mime = req.file.mimetype;
-    let fileType = 'text';
-
-    if (mime.includes('pdf')) {
-      fileType = 'pdf';
-    } else if (mime.includes('image')) {
-      fileType = 'image';
-    } else if (mime.includes('text') || req.file.originalname.match(/\.(txt|json|js|html|css|md|sql)$/i)) {
-      fileType = 'text';
+    // Check for duplicates using client-side computed contentHash
+    if (contentHash) {
+      const existing = await Asset.findOne({ contentHash });
+      if (existing) {
+        console.log(`[Deduplication] Match found for hash ${contentHash} in uploadAsset. Skipping upload.`);
+        // Cleanup temp uploaded file
+        fs.unlinkSync(req.file.path);
+        return res.status(201).json({
+          success: true,
+          duplicate: true,
+          asset: existing
+        });
+      }
     }
+    // Determine fileType and mimeType using MIME utility
+    const rawMime = req.file.mimetype || 'application/octet-stream';
+    const mimeType = rawMime.split(';')[0].trim().toLowerCase();
+    const fileType = mimeToFileType(mimeType);
 
     const s3Key = `assets/${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
     const size = req.file.size;
 
-    // Perform upload to S3 or local directory
-    await uploadFile(req.file.path, s3Key);
+    // Run content-based classification pipeline
+    const categories = classifyAsset(req.file.path, title, description);
+
+    // Perform upload to S3 or local directory passing the MIME type
+    await uploadFile(req.file.path, s3Key, mimeType);
 
     // Save record to DB
     const asset = await Asset.create({
       title,
       description,
       fileType,
+      mimeType,
       s3Key,
-      size
+      size,
+      uploadedBy: req.user._id,
+      categories,
+      contentHash: req.body.contentHash || null
+    });
+
+    // Run post-upload optimizations in the background asynchronously
+    setImmediate(() => {
+      optimizeAsset(asset._id.toString()).catch((err) => {
+        console.error('[Background Processor] Error running optimization:', err.message);
+      });
+    });
+
+    // Resolve filenames for URL creation
+    let filename = asset.title;
+    if (!filename.includes('.')) {
+      if (asset.fileType === 'pdf') filename += '.pdf';
+      else if (asset.fileType === 'image') filename += '.svg';
+      else if (asset.fileType === 'word') filename += '.docx';
+      else if (asset.fileType === 'ppt') filename += '.pptx';
+      else if (asset.fileType === 'video') filename += '.mp4';
+    }
+
+    const assetUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, filename);
+
+    // Trigger workflow event
+    const workflowPayload = {
+      asset_id: asset._id.toString(),
+      asset_name: asset.title,
+      asset_type: asset.fileType,
+      asset_url: assetUrl,
+      thumbnail_url: null,
+      uploaded_by: req.user.name,
+      uploaded_at: asset.uploadedAt.toISOString(),
+      file_size_mb: parseFloat((asset.size / (1024 * 1024)).toFixed(2)),
+      description: asset.description || null
+    };
+
+    triggerWorkflow('asset.uploaded', workflowPayload).catch(err => {
+      console.error('[Workflow Engine] Failed to trigger asset.uploaded workflow:', err.message);
     });
 
     res.status(201).json({
@@ -173,24 +267,22 @@ export const streamMockAsset = async (req, res) => {
       return res.status(404).send('Asset not found');
     }
 
+    let contentType = (asset.mimeType || 'application/octet-stream').split(';')[0].trim().toLowerCase();
     let filename = asset.title;
     let extension = '';
-    let contentType = 'text/plain';
 
-    if (asset.fileType === 'pdf') {
-      contentType = 'application/pdf';
-      extension = '.pdf';
-    } else if (asset.fileType === 'image') {
-      // Mock images are SVG, but uploaded images can be PNG, JPEG, SVG etc.
-      // We will look at S3 key extension to determine correct mimetype if it is a real local upload
-      const ext = path.extname(asset.s3Key).toLowerCase();
-      if (ext === '.png') contentType = 'image/png';
-      else if (ext === '.jpg' || ext === '.jpeg') contentType = 'image/jpeg';
-      else contentType = 'image/svg+xml';
-      extension = ext || '.svg';
-    } else {
-      contentType = 'text/plain';
-      extension = '.txt';
+    if (asset.s3Key) {
+      extension = path.extname(asset.s3Key);
+    }
+
+    if (!extension) {
+      if (asset.fileType === 'pdf') extension = '.pdf';
+      else if (asset.fileType === 'image') extension = '.png';
+      else if (asset.fileType === 'word') extension = '.docx';
+      else if (asset.fileType === 'excel') extension = '.xlsx';
+      else if (asset.fileType === 'ppt') extension = '.pptx';
+      else if (asset.fileType === 'video') extension = '.mp4';
+      else if (asset.fileType === 'audio') extension = '.mp3';
     }
 
     if (!filename.includes('.')) {
@@ -202,7 +294,8 @@ export const streamMockAsset = async (req, res) => {
     if (fs.existsSync(destPath)) {
       console.log(`Streaming real uploaded local file from: ${destPath}`);
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      const isInline = req.query.inline === 'true';
+      res.setHeader('Content-Disposition', `${isInline ? 'inline' : 'attachment'}; filename="${filename}"`);
       const fileStream = fs.createReadStream(destPath);
       return fileStream.pipe(res);
     }
@@ -250,15 +343,534 @@ startxref
           Size: ${Math.round(asset.size / 1024)} KB
         </text>
       </svg>`;
+    } else if (asset.fileType === 'word') {
+      fileContent = `Mock Word Document: ${asset.title}\nDescription: ${asset.description || ''}\nSize: ${asset.size} bytes`;
+    } else if (asset.fileType === 'ppt') {
+      fileContent = `Mock PowerPoint Presentation: ${asset.title}\nDescription: ${asset.description || ''}\nSize: ${asset.size} bytes`;
     } else {
-      fileContent = `Asset Name: ${asset.title}\nDescription: ${asset.description || 'No description provided'}\nSize: ${asset.size} bytes\nUploaded At: ${asset.uploadedAt}\n\nThis is a mock text file contents generated by the server.`;
+      fileContent = `Mock Video Stream: ${asset.title}\nDescription: ${asset.description || ''}\nSize: ${asset.size} bytes`;
     }
 
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const isInline = req.query.inline === 'true';
+    res.setHeader('Content-Disposition', `${isInline ? 'inline' : 'attachment'}; filename="${filename}"`);
     res.send(Buffer.from(fileContent));
   } catch (error) {
     console.error('Stream Mock Asset Error:', error.message);
     res.status(500).send('Server error downloading mock asset');
+  }
+};
+
+// @desc    Get presigned upload URL (PUT) for direct S3 uploads
+// @route   POST /api/assets/presign
+// @access  Private/Admin
+export const presignUpload = async (req, res) => {
+  const { filename, mimeType, sizeBytes, contentHash } = req.body;
+
+  if (!filename || !mimeType) {
+    return res.status(400).json({
+      error: true,
+      message: 'Filename and MIME type are required',
+      code: 400
+    });
+  }
+
+  try {
+    // 1. Check for duplicates using client-side computed contentHash (Phase 3.1)
+    if (contentHash) {
+      const existing = await Asset.findOne({ contentHash });
+      if (existing) {
+        console.log(`[Deduplication] Match found for hash ${contentHash}. Skipping upload.`);
+        return res.status(200).json({
+          duplicate: true,
+          existingAsset: existing
+        });
+      }
+    }
+
+    // 2. Generate S3 objectKey and sign PUT URL
+    const sanitizedFilename = filename.replace(/\s+/g, '_');
+    const objectKey = `assets/${Date.now()}_${sanitizedFilename}`;
+    const uploadUrl = await getPresignedUploadUrl(objectKey, mimeType);
+
+    res.status(200).json({
+      duplicate: false,
+      uploadUrl,
+      objectKey
+    });
+  } catch (error) {
+    console.error('Presign Upload Error:', error.message);
+    res.status(500).json({
+      error: true,
+      message: 'Server error generating upload URL',
+      code: 500
+    });
+  }
+};
+
+// @desc    Confirm successful browser upload and register asset metadata
+// @route   POST /api/assets/confirm-upload
+// @access  Private/Admin
+export const confirmUpload = async (req, res) => {
+  const { objectKey, originalFilename, mimeType, sizeBytes, contentHash, title, description } = req.body;
+
+  if (!objectKey || !title || !mimeType) {
+    return res.status(400).json({
+      error: true,
+      message: 'Asset title, key, and MIME type are required',
+      code: 400
+    });
+  }
+
+  try {
+    // 1. Check for duplicates using contentHash
+    if (contentHash) {
+      const existing = await Asset.findOne({ contentHash });
+      if (existing) {
+        console.log(`[Deduplication] Match found for hash ${contentHash} in confirmUpload. Skipping duplicate.`);
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          asset: existing
+        });
+      }
+    }
+
+    const cleanedMimeType = (mimeType || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+    const fileType = mimeToFileType(cleanedMimeType);
+
+    // Initial asset creation with basic metadata (before background optimization runs)
+    const asset = await Asset.create({
+      title,
+      description,
+      fileType,
+      mimeType: cleanedMimeType,
+      s3Key: objectKey,
+      size: sizeBytes || 0,
+      uploadedBy: req.user._id,
+      contentHash,
+      categories: ['General'] // temporary, classification will optimize this
+    });
+
+    // Run post-upload optimizations (compression, keywords, thumbnail) in background
+    setImmediate(() => {
+      optimizeAsset(asset._id.toString()).catch((err) => {
+        console.error('[Background Processor] Error running optimization:', err.message);
+      });
+    });
+
+    // Resolve filenames for URL creation
+    let filename = asset.title;
+    if (!filename.includes('.')) {
+      if (asset.fileType === 'pdf') filename += '.pdf';
+      else if (asset.fileType === 'image') filename += '.svg';
+      else if (asset.fileType === 'word') filename += '.docx';
+      else if (asset.fileType === 'ppt') filename += '.pptx';
+      else if (asset.fileType === 'video') filename += '.mp4';
+    }
+
+    const assetUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, filename);
+
+    // Trigger workflow event
+    const workflowPayload = {
+      asset_id: asset._id.toString(),
+      asset_name: asset.title,
+      asset_type: asset.fileType,
+      asset_url: assetUrl,
+      thumbnail_url: null,
+      uploaded_by: req.user.name,
+      uploaded_at: asset.uploadedAt.toISOString(),
+      file_size_mb: parseFloat((asset.size / (1024 * 1024)).toFixed(2)),
+      description: asset.description || null
+    };
+
+    triggerWorkflow('asset.uploaded', workflowPayload).catch(err => {
+      console.error('[Workflow Engine] Failed to trigger asset.uploaded workflow:', err.message);
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Asset confirmed and queued for optimization',
+      asset
+    });
+  } catch (error) {
+    console.error('Confirm Upload Error:', error.message);
+    res.status(500).json({
+      error: true,
+      message: 'Server error registering uploaded asset',
+      code: 500
+    });
+  }
+};
+
+// @desc    Get secure asset thumbnail (streams local mock thumbnail or redirects to presigned S3 url)
+// @route   GET /api/assets/:id/thumbnail
+// @access  Private
+export const getAssetThumbnail = async (req, res) => {
+  try {
+    const asset = await Asset.findById(req.params.id);
+    if (!asset || !asset.thumbnailUrl) {
+      return res.status(404).send('Thumbnail not found');
+    }
+
+    const isMockMode = !process.env.AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID === 'mock';
+
+    if (isMockMode) {
+      const destPath = path.join(UPLOADS_DIR, asset.thumbnailUrl.replace(/\//g, '_'));
+      if (fs.existsSync(destPath)) {
+        res.setHeader('Content-Type', 'image/webp');
+        return fs.createReadStream(destPath).pipe(res);
+      }
+      return res.status(404).send('Thumbnail file not found');
+    }
+
+    // Redirect to secure signed URL for S3 key
+    const downloadUrl = await getPresignedDownloadUrl(asset.thumbnailUrl, asset._id, `${asset._id}_thumb.webp`);
+    return res.redirect(downloadUrl);
+  } catch (error) {
+    console.error('Get Asset Thumbnail Error:', error.message);
+    res.status(500).send('Server error retrieving thumbnail');
+  }
+};
+
+// Resolve Google Drive links to direct download links
+const resolveDirectDownloadUrl = (url) => {
+  if (!url) return '';
+  const driveRegExp = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
+  const driveMatch = url.match(driveRegExp);
+  if (driveMatch && driveMatch[1]) {
+    return `https://docs.google.com/uc?export=download&id=${driveMatch[1]}`;
+  }
+  const driveDownloadRegExp = /drive\.google\.com\/uc\?.*id=([a-zA-Z0-9_-]+)/;
+  const driveDownloadMatch = url.match(driveDownloadRegExp);
+  if (driveDownloadMatch && driveDownloadMatch[1]) {
+    return `https://docs.google.com/uc?export=download&id=${driveDownloadMatch[1]}`;
+  }
+  return url;
+};
+
+// @desc    Upload link-based asset (downloads content, uploads to S3/mock, and registers metadata)
+// @route   POST /api/assets/upload-link
+// @access  Private/Admin
+export const uploadLinkAsset = async (req, res) => {
+  const { url, title, description } = req.body;
+
+  if (!url || !title) {
+    return res.status(400).json({
+      error: true,
+      message: 'Asset title and URL are required',
+      code: 400
+    });
+  }
+
+  try {
+    const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+    const isVimeo = url.includes('vimeo.com');
+    
+    if (isYouTube || isVimeo) {
+      // 1. YouTube/Vimeo links bypass downloading (stored as direct remote video link)
+      const linkHash = crypto.createHash('sha256').update(url.trim()).digest('hex');
+      const contentHash = `url-${linkHash}`;
+
+      const existing = await Asset.findOne({ contentHash });
+      if (existing) {
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          asset: existing
+        });
+      }
+
+      const asset = await Asset.create({
+        title,
+        description,
+        fileType: 'video',
+        mimeType: 'video/mp4',
+        s3Key: url.trim(),
+        size: 0,
+        uploadedBy: req.user._id,
+        contentHash,
+        categories: ['General']
+      });
+
+      // Run post-upload optimizations in background (categorizes from title/description)
+      setImmediate(() => {
+        optimizeAsset(asset._id.toString()).catch((err) => {
+          console.error('[Background Processor] Error running optimization:', err.message);
+        });
+      });
+
+      const assetUrl = url.trim();
+
+      // Trigger workflow event
+      const workflowPayload = {
+        asset_id: asset._id.toString(),
+        asset_name: asset.title,
+        asset_type: asset.fileType,
+        asset_url: assetUrl,
+        thumbnail_url: null,
+        uploaded_by: req.user.name,
+        uploaded_at: asset.uploadedAt.toISOString(),
+        file_size_mb: 0,
+        description: asset.description || null
+      };
+
+      triggerWorkflow('asset.uploaded', workflowPayload).catch(err => {
+        console.error('[Workflow Engine] Failed to trigger asset.uploaded workflow:', err.message);
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Video URL asset registered successfully',
+        asset
+      });
+    }
+
+    // 2. Standard document/image links: download and store in cloud
+    const resolvedUrl = resolveDirectDownloadUrl(url.trim());
+    console.log(`[Upload Link] Resolving URL: ${resolvedUrl}`);
+
+    const fetchRes = await fetch(resolvedUrl);
+    if (!fetchRes.ok) {
+      return res.status(400).json({
+        error: true,
+        message: `Failed to download file from link (HTTP Status: ${fetchRes.status})`,
+        code: 400
+      });
+    }
+
+    const rawMime = fetchRes.headers.get('content-type') || 'application/octet-stream';
+    const mimeType = rawMime.split(';')[0].trim().toLowerCase();
+    const fileType = mimeToFileType(mimeType);
+
+    // Extract filename from headers or URL
+    let filename = 'downloaded_file';
+    const cd = fetchRes.headers.get('content-disposition');
+    if (cd && cd.includes('filename=')) {
+      const match = cd.match(/filename="?([^";]+)"?/);
+      if (match && match[1]) filename = match[1];
+    } else {
+      try {
+        const parsedUrl = new URL(resolvedUrl);
+        const lastSegment = parsedUrl.pathname.substring(parsedUrl.pathname.lastIndexOf('/') + 1);
+        if (lastSegment && lastSegment.includes('.')) {
+          filename = lastSegment;
+        }
+      } catch (e) {}
+    }
+
+    // Read bytes
+    const arrayBuffer = await fetchRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const size = buffer.length;
+
+    // Deduplication check using file contentHash
+    const contentHash = crypto.createHash('sha256').update(buffer).digest('hex');
+    const existing = await Asset.findOne({ contentHash });
+    if (existing) {
+      console.log(`[Deduplication] Match found for download hash ${contentHash}. Skipping upload.`);
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        asset: existing
+      });
+    }
+
+    // Upload file buffer to S3 or local mock directory
+    const sanitizedFilename = filename.replace(/\s+/g, '_');
+    const s3Key = `assets/${Date.now()}_${sanitizedFilename}`;
+    await uploadBuffer(buffer, s3Key, mimeType);
+
+    // Create DB entry
+    const asset = await Asset.create({
+      title,
+      description,
+      fileType,
+      mimeType,
+      s3Key,
+      size,
+      uploadedBy: req.user._id,
+      contentHash,
+      categories: ['General']
+    });
+
+    // Run post-upload optimizations (compression, keywords, thumbnail) in background
+    setImmediate(() => {
+      optimizeAsset(asset._id.toString()).catch((err) => {
+        console.error('[Background Processor] Error running optimization:', err.message);
+      });
+    });
+
+    let previewFilename = asset.title;
+    if (!previewFilename.includes('.')) {
+      if (asset.fileType === 'pdf') previewFilename += '.pdf';
+      else if (asset.fileType === 'image') previewFilename += '.png';
+      else if (asset.fileType === 'word') previewFilename += '.docx';
+      else if (asset.fileType === 'ppt') previewFilename += '.pptx';
+      else if (asset.fileType === 'video') previewFilename += '.mp4';
+    }
+
+    const assetUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, previewFilename);
+
+    // Trigger workflow event
+    const workflowPayload = {
+      asset_id: asset._id.toString(),
+      asset_name: asset.title,
+      asset_type: asset.fileType,
+      asset_url: assetUrl,
+      thumbnail_url: null,
+      uploaded_by: req.user.name,
+      uploaded_at: asset.uploadedAt.toISOString(),
+      file_size_mb: parseFloat((asset.size / (1024 * 1024)).toFixed(2)),
+      description: asset.description || null
+    };
+
+    triggerWorkflow('asset.uploaded', workflowPayload).catch(err => {
+      console.error('[Workflow Engine] Failed to trigger asset.uploaded workflow:', err.message);
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Asset link downloaded and stored successfully',
+      asset
+    });
+  } catch (err) {
+    console.error('[Upload Link Error]:', err.message);
+    res.status(501).json({
+      error: true,
+      message: 'Server error processing link upload',
+      code: 500
+    });
+  }
+};
+
+// @desc    Update asset metadata (Admin only)
+// @route   PUT /api/assets/:id
+// @access  Private/Admin
+export const updateAsset = async (req, res) => {
+  const { title, description, categories } = req.body;
+
+  if (!title) {
+    return res.status(400).json({
+      error: true,
+      message: 'Asset title is required',
+      code: 400
+    });
+  }
+
+  try {
+    const asset = await Asset.findById(req.params.id);
+    if (!asset) {
+      return res.status(404).json({
+        error: true,
+        message: 'Asset not found',
+        code: 404
+      });
+    }
+
+    asset.title = title;
+    asset.description = description;
+
+    if (categories && Array.isArray(categories)) {
+      asset.categories = categories.map(c => c.trim()).filter(Boolean);
+    } else if (typeof categories === 'string') {
+      asset.categories = categories.split(',').map(c => c.trim()).filter(Boolean);
+    }
+
+    await asset.save();
+
+    // Trigger workflow event
+    let previewFilename = asset.title;
+    if (!previewFilename.includes('.')) {
+      if (asset.fileType === 'pdf') previewFilename += '.pdf';
+      else if (asset.fileType === 'image') previewFilename += '.png';
+      else if (asset.fileType === 'word') previewFilename += '.docx';
+      else if (asset.fileType === 'ppt') previewFilename += '.pptx';
+      else if (asset.fileType === 'video') previewFilename += '.mp4';
+    }
+    const assetUrl = await getPresignedDownloadUrl(asset.s3Key, asset._id, previewFilename);
+
+    const workflowPayload = {
+      asset_id: asset._id.toString(),
+      asset_name: asset.title,
+      asset_type: asset.fileType,
+      asset_url: assetUrl,
+      thumbnail_url: asset.thumbnailUrl ? await getPresignedDownloadUrl(asset.thumbnailUrl, asset._id, `${asset._id}_thumb.webp`) : null,
+      uploaded_by: req.user.name,
+      uploaded_at: asset.uploadedAt.toISOString(),
+      file_size_mb: parseFloat((asset.size / (1024 * 1024)).toFixed(2)),
+      description: asset.description || null
+    };
+
+    triggerWorkflow('asset.updated', workflowPayload).catch(err => {
+      console.error('[Workflow Engine] Failed to trigger asset.updated workflow:', err.message);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Asset updated successfully',
+      asset
+    });
+  } catch (error) {
+    console.error('Update Asset Error:', error.message);
+    res.status(500).json({
+      error: true,
+      message: 'Server error updating asset details',
+      code: 500
+    });
+  }
+};
+
+// @desc    Delete asset and physical files (Admin only)
+// @route   DELETE /api/assets/:id
+// @access  Private/Admin
+export const deleteAsset = async (req, res) => {
+  try {
+    const asset = await Asset.findById(req.params.id);
+    if (!asset) {
+      return res.status(404).json({
+        error: true,
+        message: 'Asset not found',
+        code: 404
+      });
+    }
+
+    // 1. Delete original asset file from storage
+    if (asset.s3Key) {
+      await deleteFile(asset.s3Key);
+    }
+
+    // 2. Delete thumbnail file from storage if present
+    if (asset.thumbnailUrl) {
+      await deleteFile(asset.thumbnailUrl);
+    }
+
+    // 3. Delete database record
+    await Asset.findByIdAndDelete(req.params.id);
+
+    // Trigger workflow event
+    const workflowPayload = {
+      asset_id: asset._id.toString(),
+      asset_name: asset.title,
+      asset_type: asset.fileType,
+      deleted_by: req.user.name,
+      deleted_at: new Date().toISOString()
+    };
+
+    triggerWorkflow('asset.deleted', workflowPayload).catch(err => {
+      console.error('[Workflow Engine] Failed to trigger asset.deleted workflow:', err.message);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Asset and associated files deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete Asset Error:', error.message);
+    res.status(500).json({
+      error: true,
+      message: 'Server error deleting asset',
+      code: 500
+    });
   }
 };

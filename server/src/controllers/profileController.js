@@ -21,7 +21,8 @@ export const getProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        notifications_enabled: user.notifications_enabled
       }
     });
   } catch (error) {
@@ -38,12 +39,12 @@ export const getProfile = async (req, res) => {
 // @route   PUT /api/profile
 // @access  Private
 export const updateProfile = async (req, res) => {
-  const { name, email } = req.body;
+  const { name, email, notifications_enabled } = req.body;
 
-  if (!name && !email) {
+  if (!name && !email && notifications_enabled === undefined) {
     return res.status(400).json({
       error: true,
-      message: 'Name or email is required for updating profile',
+      message: 'Name, email or notification preference is required for updating profile',
       code: 400
     });
   }
@@ -59,6 +60,7 @@ export const updateProfile = async (req, res) => {
     }
 
     if (name) user.name = name;
+    if (notifications_enabled !== undefined) user.notifications_enabled = notifications_enabled;
 
     if (email && email.toLowerCase() !== user.email.toLowerCase()) {
       // Check if email is already taken
@@ -82,7 +84,8 @@ export const updateProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        notifications_enabled: user.notifications_enabled
       }
     });
   } catch (error) {

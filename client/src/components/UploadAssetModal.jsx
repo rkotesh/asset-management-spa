@@ -8,37 +8,32 @@ import { Upload, X, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 const UploadAssetModal = ({ isOpen, onClose, onSuccess }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [file, setFile] = useState(null);
+  const [assetUrl, setAssetUrl] = useState('');
   const [errors, setErrors] = useState({});
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const { addToast } = useToastStore();
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setErrors(prev => ({ ...prev, file: null }));
-    }
-  };
 
   const validate = () => {
     const newErrors = {};
     if (!title.trim()) {
       newErrors.title = 'Asset title is required';
     }
-    if (!file) {
-      newErrors.file = 'Please select a file to upload';
+
+    if (!assetUrl.trim()) {
+      newErrors.assetUrl = 'Asset URL/Link is required';
     } else {
-      // Validate file extension matches allowed fileTypes (PDF, Image, Text)
-      const allowedExtensions = /\.(pdf|png|jpg|jpeg|svg|txt|json|js|html|css|md|sql)$/i;
-      if (!allowedExtensions.test(file.name)) {
-        newErrors.file = 'Unsupported file type. Allowed: PDF, PNG, JPG, JPEG, SVG, TXT, JSON, JS, SQL, MD';
-      }
-      // Max size: 15MB
-      if (file.size > 15 * 1024 * 1024) {
-        newErrors.file = 'File size exceeds the 15MB limit';
+      try {
+        const parsedUrl = new URL(assetUrl.trim());
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+          newErrors.assetUrl = 'Please enter a valid URL starting with http:// or https://';
+        }
+      } catch (e) {
+        newErrors.assetUrl = 'Please enter a valid URL';
       }
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -48,33 +43,49 @@ const UploadAssetModal = ({ isOpen, onClose, onSuccess }) => {
     if (!validate()) return;
 
     setIsUploading(true);
-    
-    const formData = new FormData();
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('file', file);
+    setUploadProgress(0);
+
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) return prev;
+        return prev + 10;
+      });
+    }, 450);
 
     try {
-      await apiClient.post('/assets/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      const res = await apiClient.post('/assets/upload-link', {
+        url: assetUrl.trim(),
+        title: title.trim(),
+        description: description.trim()
       });
 
-      addToast('Asset uploaded successfully!', 'success');
-      onSuccess(); // Reload asset library grid
-      
-      // Reset state and close modal
-      setTitle('');
-      setDescription('');
-      setFile(null);
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (res.data.duplicate) {
+        addToast('Duplicate file/link matched. Reference added instantly!', 'success');
+      } else {
+        addToast('Asset link processed and stored successfully!', 'success');
+      }
+
+      onSuccess();
+      resetForm();
       onClose();
     } catch (err) {
-      setErrors({ api: err.message || 'File upload failed.' });
-      addToast(err.message || 'File upload failed.', 'error');
+      clearInterval(progressInterval);
+      setErrors({ api: err.response?.data?.message || err.message || 'Link upload failed.' });
+      addToast(err.response?.data?.message || err.message || 'Link upload failed.', 'error');
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setAssetUrl('');
+    setUploadProgress(0);
+    setErrors({});
   };
 
   return (
@@ -155,46 +166,28 @@ const UploadAssetModal = ({ isOpen, onClose, onSuccess }) => {
                 />
               </div>
 
-              {/* File upload drag-and-drop selector */}
+              {/* Asset URL / Link input */}
               <div>
-                <label className="block text-xs font-semibold text-neutral-400 mb-1.5">
-                  File Upload
+                <label className="block text-xs font-semibold text-neutral-400 mb-1.5" htmlFor="asset-url">
+                  Asset URL / Link
                 </label>
-                <div className={`relative border border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors duration-200 ${
-                  errors.file
-                    ? 'border-red-500/50 bg-red-500/5'
-                    : file
-                    ? 'border-emerald-500/50 bg-emerald-500/5'
-                    : 'border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900/20'
-                }`}>
-                  <input
-                    type="file"
-                    onChange={handleFileChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                    disabled={isUploading}
-                  />
-                  
-                  {file ? (
-                    <div className="flex flex-col items-center space-y-1">
-                      <CheckCircle size={32} className="text-emerald-400" />
-                      <span className="text-xs font-bold text-white truncate max-w-[250px]">{file.name}</span>
-                      <span className="text-[10px] text-neutral-400">
-                        {parseFloat((file.size / (1024 * 1024)).toFixed(2))} MB
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center space-y-2">
-                      <Upload size={32} className="text-neutral-500" />
-                      <span className="text-xs text-neutral-300 font-semibold">Click to select files</span>
-                      <span className="text-[9px] text-neutral-500">
-                        Max size: 15MB. Supported: PDF, Image, Code & Text
-                      </span>
-                    </div>
-                  )}
-                </div>
-                {errors.file && (
-                  <p className="mt-1 text-xs text-red-400">{errors.file}</p>
+                <input
+                  id="asset-url"
+                  type="text"
+                  value={assetUrl}
+                  onChange={(e) => setAssetUrl(e.target.value)}
+                  placeholder="e.g. Google Drive link or raw document URL"
+                  className={`w-full px-3 py-2 rounded-lg glass-input text-sm ${
+                    errors.assetUrl ? 'border-red-500/50 ring-2 ring-red-500/10' : ''
+                  }`}
+                  disabled={isUploading}
+                />
+                {errors.assetUrl && (
+                  <p className="mt-1 text-xs text-red-400">{errors.assetUrl}</p>
                 )}
+                <p className="mt-1 text-[10px] text-neutral-500">
+                  Provide any Google Drive file link, raw document, image, or video link.
+                </p>
               </div>
 
               {errors.api && (
@@ -219,7 +212,7 @@ const UploadAssetModal = ({ isOpen, onClose, onSuccess }) => {
                   {isUploading ? (
                     <>
                       <Loader2 size={13} className="animate-spin" />
-                      <span>Uploading...</span>
+                      <span>Uploading ({uploadProgress}%)</span>
                     </>
                   ) : (
                     <>

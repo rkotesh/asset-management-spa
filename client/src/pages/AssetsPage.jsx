@@ -5,17 +5,24 @@ import { useToastStore } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
 import apiClient from '../api/apiClient';
 import { pageVariant, staggerContainer, cardVariant, fadeIn } from '../animations/variants';
-import { Search, FileText, Image as ImageIcon, FileCode, Download, FolderOpen, Loader2, ArrowRight, Upload } from 'lucide-react';
+import { Search, FileText, Image as ImageIcon, Download, FolderOpen, Loader2, ArrowRight, Upload, Video as VideoIcon, Presentation } from 'lucide-react';
 import UploadAssetModal from '../components/UploadAssetModal';
 
 const AssetsPage = () => {
   const [assets, setAssets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const getThumbnailUrl = (assetId) => {
+    const baseURL = apiClient.defaults.baseURL || '';
+    const apiBase = baseURL.endsWith('/api') ? baseURL.slice(0, -4) : baseURL;
+    return `${apiBase}/api/assets/${assetId}/thumbnail`;
+  };
   
   // Search & Filter state
   const [searchVal, setSearchVal] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('all'); // 'all', 'pdf', 'image', 'text'
+  const [categories, setCategories] = useState([]);
+  const [activeTab, setActiveTab] = useState('all'); // 'all' or category name
 
   // Downloading progress state: { [assetId]: percentage }
   const [downloadsInProgress, setDownloadsInProgress] = useState({});
@@ -36,14 +43,27 @@ const AssetsPage = () => {
     return () => clearTimeout(handler);
   }, [searchVal]);
 
+  // Fetch unique categories list
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await apiClient.get('/assets/categories');
+        setCategories(res.data.categories || []);
+      } catch (err) {
+        console.error('Failed to fetch categories:', err.message);
+      }
+    };
+    fetchCategories();
+  }, [refreshTrigger]);
+
   // Fetch assets whenever search, tab, or refresh trigger changes
   useEffect(() => {
     const fetchAssets = async () => {
       setIsLoading(true);
       try {
-        const typeQuery = activeTab !== 'all' ? `type=${activeTab}` : '';
+        const categoryQuery = activeTab !== 'all' ? `category=${encodeURIComponent(activeTab)}` : '';
         const searchQuery = searchTerm ? `search=${encodeURIComponent(searchTerm)}` : '';
-        const params = [typeQuery, searchQuery].filter(Boolean).join('&');
+        const params = [categoryQuery, searchQuery].filter(Boolean).join('&');
         const url = `/assets${params ? `?${params}` : ''}`;
         
         const res = await apiClient.get(url);
@@ -113,8 +133,12 @@ const AssetsPage = () => {
         return <FileText size={24} className="text-rose-400" />;
       case 'image':
         return <ImageIcon size={24} className="text-emerald-400" />;
-      case 'text':
-        return <FileCode size={24} className="text-sky-400" />;
+      case 'word':
+        return <FileText size={24} className="text-blue-400" />;
+      case 'ppt':
+        return <Presentation size={24} className="text-amber-400" />;
+      case 'video':
+        return <VideoIcon size={24} className="text-purple-400" />;
       default:
         return <FileText size={24} className="text-neutral-400" />;
     }
@@ -130,9 +154,7 @@ const AssetsPage = () => {
 
   const tabList = [
     { id: 'all', label: 'All Files' },
-    { id: 'pdf', label: 'PDF Documents' },
-    { id: 'image', label: 'Images' },
-    { id: 'text', label: 'Code & Text' }
+    ...categories.map(cat => ({ id: cat, label: cat }))
   ];
 
   return (
@@ -267,25 +289,47 @@ const AssetsPage = () => {
                   key={asset._id}
                   variants={cardVariant}
                   onClick={() => navigate(`/assets/${asset._id}`)}
-                  className="glass-card p-6 rounded-2xl hover:border-neutral-700 transition-all duration-300 flex flex-col justify-between h-56 cursor-pointer relative overflow-hidden group hover:shadow-xl hover:shadow-primary-500/5"
+                  className="glass-card p-6 rounded-2xl hover:border-neutral-700 transition-all duration-300 flex flex-col justify-between min-h-[15rem] h-auto cursor-pointer relative overflow-hidden group hover:shadow-xl hover:shadow-primary-500/5"
                 >
                   <div>
                     {/* Header: Icon & Title */}
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center space-x-3">
-                        <div className="p-2.5 rounded-xl bg-neutral-900 group-hover:bg-neutral-800 transition-colors">
-                          {getFileIcon(asset.fileType)}
+                        <div className="w-11 h-11 rounded-xl bg-neutral-900 group-hover:bg-neutral-800 transition-colors overflow-hidden flex items-center justify-center border border-neutral-850 flex-shrink-0">
+                          {asset.thumbnailUrl ? (
+                            <img
+                              src={getThumbnailUrl(asset._id)}
+                              alt={asset.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            getFileIcon(asset.fileType)
+                          )}
                         </div>
                         <h3 className="text-base font-bold text-white line-clamp-1 group-hover:text-primary-400 transition-colors">
                           {asset.title}
                         </h3>
                       </div>
                     </div>
-
+ 
                     {/* Body: Description */}
-                    <p className="text-xs text-neutral-400 line-clamp-3 mb-4 leading-relaxed">
+                    <p className="text-xs text-neutral-400 line-clamp-2 mb-3 leading-relaxed">
                       {asset.description || 'No description provided.'}
                     </p>
+
+                    {/* Category Tags */}
+                    {asset.categories && asset.categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-4">
+                        {asset.categories.map((cat) => (
+                          <span
+                            key={cat}
+                            className="px-2 py-0.5 text-[10px] font-medium bg-primary-500/10 text-primary-400 border border-primary-500/20 rounded-md whitespace-nowrap"
+                          >
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Footer: Size & Action */}

@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 import apiClient from '../api/apiClient';
 import { pageVariant, fadeIn } from '../animations/variants';
-import { User, Mail, Shield, Calendar, Edit2, Lock, Save, X, KeyRound, Loader2 } from 'lucide-react';
+import { User, Mail, Shield, Calendar, Edit2, Lock, Save, X, KeyRound, Loader2, Bell, BellOff } from 'lucide-react';
 
 const ProfilePage = () => {
   const { user, updateProfile } = useAuthStore();
@@ -14,6 +14,7 @@ const ProfilePage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(user?.notifications_enabled !== false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
 
@@ -35,7 +36,7 @@ const ProfilePage = () => {
     setIsSavingProfile(true);
     setProfileError('');
     try {
-      const res = await apiClient.put('/profile', { name, email });
+      const res = await apiClient.put('/profile', { name, email, notifications_enabled: notificationsEnabled });
       updateProfile(res.data.user);
       addToast('Profile updated successfully!', 'success');
       setIsEditing(false);
@@ -50,6 +51,7 @@ const ProfilePage = () => {
   const handleCancelProfile = () => {
     setName(user?.name || '');
     setEmail(user?.email || '');
+    setNotificationsEnabled(user?.notifications_enabled !== false);
     setProfileError('');
     setIsEditing(false);
   };
@@ -177,6 +179,25 @@ const ProfilePage = () => {
                       </span>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-neutral-800/60">
+                    <div>
+                      <span className="block text-xs text-neutral-500 mb-0.5">Notification Settings</span>
+                      <span className="text-sm font-semibold text-white flex items-center">
+                        {user?.notifications_enabled !== false ? (
+                          <>
+                            <Bell size={16} className="mr-2 text-emerald-400" />
+                            <span>Notifications Enabled</span>
+                          </>
+                        ) : (
+                          <>
+                            <BellOff size={16} className="mr-2 text-neutral-500" />
+                            <span>Notifications Disabled</span>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
                 </motionFramer.div>
               ) : (
                 <motionFramer.form
@@ -209,6 +230,21 @@ const ProfilePage = () => {
                         className="w-full px-3 py-2 rounded-lg glass-input text-sm"
                       />
                     </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-neutral-800/60">
+                    <label className="flex items-center space-x-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={notificationsEnabled}
+                        onChange={(e) => setNotificationsEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded border-neutral-800 text-primary-600 bg-neutral-900 focus:ring-primary-500/20 focus:ring-2 focus:ring-offset-0"
+                      />
+                      <div>
+                        <span className="block text-sm font-bold text-white">Receive Email Notifications</span>
+                        <span className="block text-xs text-neutral-400">Get notified when new assets are uploaded to the vault</span>
+                      </div>
+                    </label>
                   </div>
 
                   {profileError && (

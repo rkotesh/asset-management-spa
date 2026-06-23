@@ -62,7 +62,8 @@ export const register = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        notifications_enabled: user.notifications_enabled
       }
     });
   } catch (error) {
@@ -118,7 +119,8 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        createdAt: user.createdAt
+        createdAt: user.createdAt,
+        notifications_enabled: user.notifications_enabled
       }
     });
   } catch (error) {

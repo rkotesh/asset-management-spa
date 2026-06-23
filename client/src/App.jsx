@@ -16,12 +16,16 @@ import ProfilePage from './pages/ProfilePage';
 import QueryPage from './pages/QueryPage';
 import AdminPage from './pages/AdminPage';
 import NotFoundPage from './pages/NotFoundPage';
+import LandingPage from './pages/LandingPage';
 
 function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
         <Routes>
+          {/* Public Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+
           {/* Public Auth Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -30,24 +34,20 @@ function App() {
 
           {/* Protected Main Layout Shell */}
           <Route
-            path="/"
             element={
               <ProtectedRoute>
                 <Layout />
               </ProtectedRoute>
             }
           >
-            {/* Redirect home to assets */}
-            <Route index element={<Navigate to="/assets" replace />} />
-            
-            <Route path="assets" element={<AssetsPage />} />
-            <Route path="assets/:id" element={<AssetDetailPage />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="query" element={<QueryPage />} />
+            <Route path="/assets" element={<AssetsPage />} />
+            <Route path="/assets/:id" element={<AssetDetailPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/query" element={<QueryPage />} />
             
             {/* Admin-only route */}
             <Route
-              path="admin"
+              path="/admin"
               element={
                 <ProtectedRoute adminOnly={true}>
                   <AdminPage />

@@ -12,9 +12,20 @@ const assetSchema = new mongoose.Schema({
   },
   fileType: {
     type: String,
-    enum: ['pdf', 'image', 'text'],
+    enum: ['pdf', 'image', 'text', 'word', 'excel', 'powerpoint', 'video', 'audio', 'archive', 'other'],
     required: [true, 'File type is required'],
-    index: true // Index for fast filtering by file type
+    index: true
+  },
+  mimeType: {
+    type: String,
+    required: [true, 'MIME type is required']
+  },
+  contentHash: {
+    type: String,
+    index: true
+  },
+  thumbnailUrl: {
+    type: String
   },
   s3Key: {
     type: String,
@@ -26,6 +37,15 @@ const assetSchema = new mongoose.Schema({
   size: {
     type: Number, // File size in bytes
     required: [true, 'Size in bytes is required']
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  categories: {
+    type: [String],
+    default: ['General']
   }
 }, {
   timestamps: { createdAt: 'uploadedAt', updatedAt: false } // Only track uploadedAt

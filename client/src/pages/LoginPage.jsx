@@ -62,25 +62,6 @@ const LoginPage = () => {
     }
   };
 
-  const handleQuickLogin = async (demoEmail, demoPassword, roleName) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setErrors({});
-    
-    addToast(`Logging in as Demo ${roleName}...`, 'info');
-    
-    const result = await login(demoEmail, demoPassword);
-    if (result.success) {
-      addToast(`Welcome back, ${result.user.name}!`, 'success');
-      const from = location.state?.from?.pathname || '/assets';
-      navigate(from, { replace: true });
-    } else {
-      setShakeTrigger(true);
-      setTimeout(() => setShakeTrigger(false), 500);
-      addToast(result.message || 'Login failed.', 'error');
-    }
-  };
-
   return (
     <motion.div
       variants={pageVariant}
@@ -183,31 +164,6 @@ const LoginPage = () => {
               )}
             </motion.button>
           </form>
-
-          {/* Quick Demo Login */}
-          <div className="mt-6 pt-5 border-t border-neutral-900/60 text-center">
-            <span className="block text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">
-              Quick Demo Login
-            </span>
-            <div className="flex justify-center space-x-3">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                type="button"
-                onClick={() => handleQuickLogin('user@example.com', 'user123', 'User')}
-                className="px-3.5 py-2 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-primary-500/30 hover:bg-primary-500/5 transition-all text-xs text-neutral-300 font-bold flex items-center space-x-1 shadow"
-              >
-                <span>Demo User</span>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                type="button"
-                onClick={() => handleQuickLogin('admin@example.com', 'admin123', 'Admin')}
-                className="px-3.5 py-2 rounded-xl bg-neutral-900 border border-neutral-800 hover:border-accent-500/30 hover:bg-accent-500/5 transition-all text-xs text-neutral-300 font-bold flex items-center space-x-1 shadow"
-              >
-                <span>Demo Admin</span>
-              </motion.button>
-            </div>
-          </div>
 
           <div className="mt-6 text-center text-sm">
             <span className="text-neutral-400">Don't have an account? </span>
