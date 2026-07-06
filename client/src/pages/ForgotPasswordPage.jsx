@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Helmet } from 'react-helmet-async';
 import apiClient from '../api/apiClient';
 import { useToastStore } from '../store/toastStore';
 import { pageVariant, shake, fadeIn } from '../animations/variants';
 import { Mail, Loader2, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 const ForgotPasswordPage = () => {
+  const siteUrl = import.meta.env.VITE_SITE_URL || 'https://secure-vault.com';
+  const canonicalUrl = `${siteUrl}/forgot-password`;
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -60,6 +63,26 @@ const ForgotPasswordPage = () => {
       exit="exit"
       className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden bg-neutral-950"
     >
+      <Helmet>
+        <title>Reset Password - Secure Vault Asset Management</title>
+        <meta name="description" content="Request a password reset link to securely regain access to your Secure Vault asset management account." />
+        <meta name="robots" content="noindex, nofollow" />
+        <link rel="canonical" href={canonicalUrl} />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:title" content="Reset Password - Secure Vault Asset Management" />
+        <meta property="og:description" content="Request a password reset link to securely regain access to your Secure Vault asset management account." />
+        <meta property="og:image" content={`${siteUrl}/og-image.svg`} />
+
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary" />
+        <meta property="twitter:title" content="Reset Password - Secure Vault Asset Management" />
+        <meta property="twitter:description" content="Request a password reset link to securely regain access to your Secure Vault asset management account." />
+        <meta property="twitter:image" content={`${siteUrl}/og-image.svg`} />
+      </Helmet>
+
       {/* Decorative background glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-500/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent-500/10 rounded-full blur-[100px] pointer-events-none" />

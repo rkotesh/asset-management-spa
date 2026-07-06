@@ -300,6 +300,7 @@ const AssetsPage = () => {
                             <img
                               src={getThumbnailUrl(asset._id)}
                               alt={asset.title}
+                              loading="lazy"
                               className="w-full h-full object-cover"
                             />
                           ) : (

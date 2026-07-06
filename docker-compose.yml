@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # 1. MongoDB Service
+  mongodb:
+    image: mongo:6.0
+    container_name: vault-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - vault-network
+
+  # 2. Server API Service
+  server:
+    build:
+      context: ./server
+    container_name: vault-server
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017/secure-vault}
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8080}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+    depends_on:
+      - mongodb
+    networks:
+      - vault-network
+
+  # 3. Client Web Service
+  client:
+    build:
+      context: ./client
+    container_name: vault-client
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
+    networks:
+      - vault-network
+
+volumes:
+  mongo-data:
+
+networks:
+  vault-network:
+    driver: bridge

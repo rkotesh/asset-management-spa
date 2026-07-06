@@ -7,7 +7,21 @@
     <title>Asset Management</title>
   </head>
   <body>
+    <noscript>
+      <div style="font-family: sans-serif; padding: 2rem; text-align: center; background-color: #0a0a0a; color: #d4d4d4; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <h1 style="color: #ffffff; font-size: 2rem; margin-bottom: 1rem;">Secure Vault - Asset Management</h1>
+        <p style="max-width: 600px; margin-bottom: 2rem; line-height: 1.6;">
+          You need to enable JavaScript to run this application. Secure Vault is a premium military-grade encrypted repository for managing structured file storage, advanced access logs, and real-time event-driven notification pipelines.
+        </p>
+        <nav style="display: flex; gap: 1.5rem;">
+          <a href="/" style="color: #6366f1; text-decoration: none; font-weight: bold;">Home</a>
+          <a href="/login" style="color: #6366f1; text-decoration: none; font-weight: bold;">Sign In</a>
+          <a href="/register" style="color: #6366f1; text-decoration: none; font-weight: bold;">Register</a>
+          <a href="/forgot-password" style="color: #6366f1; text-decoration: none; font-weight: bold;">Reset Password</a>
+        </nav>
+      </div>
+    </noscript>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/entry-client.jsx"></script>
   </body>
 </html>

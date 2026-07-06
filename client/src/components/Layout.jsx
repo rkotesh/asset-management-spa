@@ -41,12 +41,13 @@ const Layout = () => {
   const navItems = [
     { path: '/assets', label: 'Assets', icon: Folder },
     { path: '/profile', label: 'Profile', icon: User },
-    { path: '/query', label: 'Support', icon: MessageSquare },
   ];
 
-  // If user is admin, append Admin panel route
+  // If user is admin, append Admin panel route; otherwise append Support route
   if (user?.role === 'admin') {
     navItems.push({ path: '/admin', label: 'Admin', icon: ShieldAlert });
+  } else {
+    navItems.push({ path: '/query', label: 'Support', icon: MessageSquare });
   }
 
   const userInitials = user?.name
@@ -82,15 +83,6 @@ const Layout = () => {
                   isActive ? 'text-white' : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
-                {/* Active Indicator Underlay */}
-                {isActive && (
-                  <motion.div
-                    layoutId="nav-indicator"
-                    className="absolute inset-0 bg-primary-600/10 border border-primary-500/20 rounded-xl"
-                    transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-                  />
-                )}
-                
                 <IconComponent size={18} className={isActive ? 'text-primary-400' : 'text-neutral-400 group-hover:text-neutral-200 transition-colors'} />
                 <span className="z-10">{item.label}</span>
               </Link>
@@ -241,7 +233,7 @@ const Layout = () => {
                         onClick={() => setIsMobileSidebarOpen(false)}
                         className={`flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-colors duration-150 ${
                           isActive
-                            ? 'bg-primary-600/10 border border-primary-500/20 text-white'
+                            ? 'text-white'
                             : 'text-neutral-400 hover:text-neutral-200'
                         }`}
                       >

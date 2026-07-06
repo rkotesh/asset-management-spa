@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /assets/
+Disallow: /profile/
+Disallow: /query/
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://secure-vault.com/sitemap.xml

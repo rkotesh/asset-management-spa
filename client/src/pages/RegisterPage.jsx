@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Helmet } from 'react-helmet-async';
 import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
 import { pageVariant, shake } from '../animations/variants';
 import { User, Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 
 const RegisterPage = () => {
+  const siteUrl = import.meta.env.VITE_SITE_URL || 'https://secure-vault.com';
+  const canonicalUrl = `${siteUrl}/register`;
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -75,6 +78,25 @@ const RegisterPage = () => {
       exit="exit"
       className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden bg-neutral-950"
     >
+      <Helmet>
+        <title>Create an Account - Secure Vault Asset Management</title>
+        <meta name="description" content="Register for a Secure Vault client account to search, preview, and download authorized files, documents, and videos." />
+        <link rel="canonical" href={canonicalUrl} />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:title" content="Create an Account - Secure Vault Asset Management" />
+        <meta property="og:description" content="Register for a Secure Vault client account to search, preview, and download authorized files, documents, and videos." />
+        <meta property="og:image" content={`${siteUrl}/og-image.svg`} />
+
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary" />
+        <meta property="twitter:title" content="Create an Account - Secure Vault Asset Management" />
+        <meta property="twitter:description" content="Register for a Secure Vault client account to search, preview, and download authorized files, documents, and videos." />
+        <meta property="twitter:image" content={`${siteUrl}/og-image.svg`} />
+      </Helmet>
+
       {/* Decorative background glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-500/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent-500/10 rounded-full blur-[100px] pointer-events-none" />

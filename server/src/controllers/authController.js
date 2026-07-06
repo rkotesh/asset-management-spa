@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import sendMail from '../utils/mailer.js';
+import LoginLog from '../models/LoginLog.js';
 
 // Helper to generate access tokens
 const generateToken = (id) => {
@@ -112,6 +113,20 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
+    // Update user login tracking fields
+    user.lastLogin = new Date();
+    user.loginCount = (user.loginCount || 0) + 1;
+    await user.save();
+
+    // Fire-and-forget login logging
+    LoginLog.create({
+      userId: user._id,
+      ip: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+      userAgent: req.headers['user-agent']
+    }).catch(err => {
+      console.error('Failed to create LoginLog:', err.message);
+    });
+
     res.status(200).json({
       token,
       user: {
@@ -120,7 +135,9 @@ export const login = async (req, res) => {
         email: user.email,
         role: user.role,
         createdAt: user.createdAt,
-        notifications_enabled: user.notifications_enabled
+        notifications_enabled: user.notifications_enabled,
+        lastLogin: user.lastLogin,
+        loginCount: user.loginCount
       }
     });
   } catch (error) {

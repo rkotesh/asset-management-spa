@@ -1,12 +1,30 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Helmet } from 'react-helmet-async';
 import { useAuthStore } from '../store/authStore';
 import { pageVariant, fadeIn, staggerContainer } from '../animations/variants';
 import { Shield, Zap, Lock, ArrowRight, FolderDot, Terminal, HelpCircle } from 'lucide-react';
 
 const LandingPage = () => {
   const { token } = useAuthStore();
+  
+  const siteUrl = import.meta.env.VITE_SITE_URL || 'https://secure-vault.com';
+  const canonicalUrl = `${siteUrl}/`;
+  
+  const schemaMarkup = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    'name': 'Secure Vault',
+    'operatingSystem': 'All',
+    'applicationCategory': 'BusinessApplication',
+    'description': 'Secure Vault provides structured file storage, advanced access logs, and real-time event-driven notification pipelines for secure asset management.',
+    'offers': {
+      '@type': 'Offer',
+      'price': '0',
+      'priceCurrency': 'USD'
+    }
+  };
 
   return (
     <motion.div
@@ -16,6 +34,30 @@ const LandingPage = () => {
       exit="exit"
       className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col relative overflow-hidden font-sans"
     >
+      <Helmet>
+        <title>Secure Vault - Military-Grade Encrypted Asset Management</title>
+        <meta name="description" content="Secure Vault provides structured file storage, advanced access logs, and real-time event-driven notification pipelines for secure asset management." />
+        <link rel="canonical" href={canonicalUrl} />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalUrl} />
+        <meta property="og:title" content="Secure Vault - Military-Grade Encrypted Asset Management" />
+        <meta property="og:description" content="Secure Vault provides structured file storage, advanced access logs, and real-time event-driven notification pipelines for secure asset management." />
+        <meta property="og:image" content={`${siteUrl}/og-image.svg`} />
+
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content={canonicalUrl} />
+        <meta property="twitter:title" content="Secure Vault - Military-Grade Encrypted Asset Management" />
+        <meta property="twitter:description" content="Secure Vault provides structured file storage, advanced access logs, and real-time event-driven notification pipelines for secure asset management." />
+        <meta property="twitter:image" content={`${siteUrl}/og-image.svg`} />
+
+        <script type="application/ld+json">
+          {JSON.stringify(schemaMarkup)}
+        </script>
+      </Helmet>
+
       {/* Dynamic background glows */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-primary-500/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-accent-500/10 rounded-full blur-[120px] pointer-events-none" />
@@ -35,7 +77,7 @@ const LandingPage = () => {
           {token ? (
             <Link
               to="/assets"
-              className="px-5 py-2.5 bg-gradient-to-r from-primary-600 to-accent-600 hover:from-primary-500 hover:to-accent-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all"
+              className="px-6 py-3 bg-gradient-to-r from-primary-600 to-accent-600 hover:from-primary-500 hover:to-accent-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all min-h-[44px] flex items-center"
             >
               Go to Dashboard
             </Link>
@@ -43,13 +85,13 @@ const LandingPage = () => {
             <>
               <Link
                 to="/login"
-                className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors"
+                className="text-xs font-semibold text-neutral-400 hover:text-white transition-colors min-h-[44px] px-3 flex items-center"
               >
                 Sign In
               </Link>
               <Link
                 to="/register"
-                className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold rounded-xl transition-all"
+                className="px-5 py-3 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-200 hover:text-white text-xs font-semibold rounded-xl transition-all min-h-[44px] flex items-center"
               >
                 Register
               </Link>
@@ -116,6 +158,14 @@ const LandingPage = () => {
 
       {/* Features Grid */}
       <section className="w-full max-w-6xl mx-auto px-6 py-12 z-10">
+        <div className="text-center mb-10">
+          <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
+            Advanced Vault Features
+          </h2>
+          <p className="text-sm text-neutral-400 mt-2 max-w-lg mx-auto">
+            Secure Vault simplifies asset management with a suite of enterprise-grade security tools and real-time workflows.
+          </p>
+        </div>
         <motion.div
           variants={staggerContainer}
           initial="hidden"

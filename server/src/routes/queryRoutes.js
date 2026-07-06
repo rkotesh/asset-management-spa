@@ -1,5 +1,5 @@
 import express from 'express';
-import { createQuery, getQueries, resolveQuery } from '../controllers/queryController.js';
+import { createQuery, getQueries, resolveQuery, getUserQueries } from '../controllers/queryController.js';
 import { protect, adminOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/', createQuery);
+router.get('/my-queries', getUserQueries);
 
 // Administrative routes require admin role checks
 router.get('/', adminOnly, getQueries);

@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import apiClient from '../api/apiClient';
 
+const isClient = typeof window !== 'undefined';
+
 export const useAuthStore = create((set, get) => ({
-  token: localStorage.getItem('token') || null,
-  user: JSON.parse(localStorage.getItem('user')) || null,
+  token: isClient ? localStorage.getItem('token') : null,
+  user: (isClient && localStorage.getItem('user')) ? JSON.parse(localStorage.getItem('user')) : null,
   isLoading: false,
 
   setCredentials: (token, user) => {

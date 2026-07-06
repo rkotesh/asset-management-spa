@@ -33,6 +33,13 @@ const userSchema = new mongoose.Schema({
   notifications_enabled: {
     type: Boolean,
     default: true
+  },
+  lastLogin: {
+    type: Date
+  },
+  loginCount: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true

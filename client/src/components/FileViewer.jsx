@@ -192,6 +192,7 @@ const FileViewer = ({ fileType, fileUrl, mimeType, filename }) => {
           <img
             src={fileUrl}
             alt={filename}
+            loading="lazy"
             className="max-h-[70vh] object-contain rounded hover:scale-[1.01] transition-transform duration-300"
           />
         </div>

@@ -1,27 +1,39 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import ToastContainer from './components/Toast';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
-// Pages
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
-import AssetsPage from './pages/AssetsPage';
-import AssetDetailPage from './pages/AssetDetailPage';
-import ProfilePage from './pages/ProfilePage';
-import QueryPage from './pages/QueryPage';
-import AdminPage from './pages/AdminPage';
-import NotFoundPage from './pages/NotFoundPage';
-import LandingPage from './pages/LandingPage';
+// Import route components (dynamically resolved to Client or Server bundle imports)
+import {
+  LandingPage,
+  LoginPage,
+  RegisterPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
+  AssetsPage,
+  AssetDetailPage,
+  ProfilePage,
+  QueryPage,
+  AdminPage,
+  NotFoundPage
+} from '@/AppRoutes';
+
+// Loader fallback component
+const LoadingFallback = () => (
+  <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400 font-sans">
+    <div className="flex flex-col items-center space-y-4">
+      <div className="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+      <div className="text-xs font-semibold tracking-wider text-neutral-500 uppercase">Loading secure vault...</div>
+    </div>
+  </div>
+);
 
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public Landing Page */}
           <Route path="/" element={<LandingPage />} />
@@ -57,9 +69,10 @@ function App() {
           </Route>
 
           {/* Fallback 404 Route */}
+          <Route path="/404" element={<NotFoundPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
-      </BrowserRouter>
+      </Suspense>
       
       {/* Toast Notification Container Overlay */}
       <ToastContainer />

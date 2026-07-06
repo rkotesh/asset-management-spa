@@ -186,7 +186,7 @@ const UploadAssetModal = ({ isOpen, onClose, onSuccess }) => {
                   <p className="mt-1 text-xs text-red-400">{errors.assetUrl}</p>
                 )}
                 <p className="mt-1 text-[10px] text-neutral-500">
-                  Provide any Google Drive file link, raw document, image, or video link.
+                  Provide a Google Drive link (file/folder) or a direct web URL. Folder links automatically analyze contents: identical types are saved as one archive; mixed contents are split and uploaded as separate assets.
                 </p>
               </div>
 

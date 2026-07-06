@@ -23,6 +23,13 @@ const querySchema = new mongoose.Schema({
     enum: ['open', 'resolved'],
     default: 'open',
     index: true // Index for quick querying of active / completed requests
+  },
+  response: {
+    type: String,
+    trim: true
+  },
+  respondedAt: {
+    type: Date
   }
 }, {
   timestamps: true

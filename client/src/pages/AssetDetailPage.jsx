@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Helmet } from 'react-helmet-async';
 import { useToastStore } from '../store/toastStore';
 import { useAuthStore } from '../store/authStore';
 import apiClient from '../api/apiClient';
@@ -14,6 +15,34 @@ const AssetDetailPage = () => {
   const navigate = useNavigate();
   const { addToast } = useToastStore();
   const { user } = useAuthStore();
+  
+  const siteUrl = import.meta.env.VITE_SITE_URL || 'https://secure-vault.com';
+  const canonicalUrl = `${siteUrl}/assets/${id}`;
+
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    'itemListElement': [
+      {
+        '@type': 'ListItem',
+        'position': 1,
+        'name': 'Home',
+        'item': siteUrl
+      },
+      {
+        '@type': 'ListItem',
+        'position': 2,
+        'name': 'Assets',
+        'item': `${siteUrl}/assets`
+      },
+      {
+        '@type': 'ListItem',
+        'position': 3,
+        'name': 'Asset Detail',
+        'item': canonicalUrl
+      }
+    ]
+  };
   
   const [asset, setAsset] = useState(null);
   const [downloadUrl, setDownloadUrl] = useState('');
@@ -77,13 +106,9 @@ const AssetDetailPage = () => {
         setDownloadProgress(100);
 
         try {
-          // If we have a cached download url, use it, otherwise re-fetch
-          let targetUrl = downloadUrl;
-          if (!targetUrl) {
-            const res = await apiClient.get(`/assets/${id}/download`);
-            targetUrl = res.data.downloadUrl;
-            setDownloadUrl(targetUrl);
-          }
+          // Always fetch a fresh attachment download URL (inline=false) to ensure correct headers and logging
+          const res = await apiClient.get(`/assets/${id}/download`);
+          const targetUrl = res.data.downloadUrl;
           window.open(targetUrl, '_blank');
           addToast('File downloaded successfully!', 'success');
         } catch (err) {
@@ -143,6 +168,20 @@ const AssetDetailPage = () => {
 
   if (!asset) return null;
 
+  const productSchema = asset ? {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    'name': asset.title,
+    'description': asset.description || 'Secure presentation, document, video, or image file stored in vault.',
+    'image': asset.thumbnailUrl || `${siteUrl}/default-thumbnail.png`,
+    'offers': {
+      '@type': 'Offer',
+      'price': '0',
+      'priceCurrency': 'USD',
+      'availability': 'https://schema.org/InStock'
+    }
+  } : null;
+
   return (
     <motion.div
       variants={pageVariant}
@@ -151,6 +190,20 @@ const AssetDetailPage = () => {
       exit="exit"
       className="max-w-5xl mx-auto py-8 px-4 space-y-8"
     >
+      <Helmet>
+        <title>{asset ? `${asset.title} - Secure Vault` : 'Asset Details - Secure Vault'}</title>
+        <meta name="description" content={asset ? (asset.description || `View details of the secure asset ${asset.title}.`) : 'View details of the secure asset.'} />
+        <meta name="robots" content="noindex, nofollow" />
+        <link rel="canonical" href={canonicalUrl} />
+        <script type="application/ld+json">
+          {JSON.stringify(breadcrumbSchema)}
+        </script>
+        {productSchema && (
+          <script type="application/ld+json">
+            {JSON.stringify(productSchema)}
+          </script>
+        )}
+      </Helmet>
       {/* Back Button */}
       <Link
         to="/assets"
